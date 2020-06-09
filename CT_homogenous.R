@@ -14,7 +14,7 @@ library(gtools)
 #################################################
 
 
-fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
@@ -23,7 +23,7 @@ m <- nrow(prior) # number of markets
 kx <- 10 # number of explanatory variables
 v2k <- unique(permutations(n=6,r=6,v=c(1,0,0,0,0,0),set=F,repeats.allowed = T)) # list all possible matket combinations
 l2k <- nrow(v2k) # number of possible market combinations
-X <- vector("list", m) # each element will be a matrix of kx+1 column (column 1 is intercept)
+X <- vector("list", m) # each element will be a matrix
 Y <- vector("list", m) # each element will be a vector
 G <- vector("list", m) # each element will ba a n x n adjacency matrix
 n <- rep(6,m) # number of firms for each market is 6
@@ -76,7 +76,7 @@ bdf <- function(){
 ## generates a dataset for 2SLS estimation
 
   siz <- sum(n) # total number of firms
-  bX <- matrix(1,siz,(kx+1)) # regressors are 1+ X + gy
+  bX <- matrix(1,siz,(kx+1)) # regressors are X + gy
   bZ <- matrix(1,siz,kx) # instruments are GX (excluding constant)
   bY <- matrix(1,siz,1) # explained var is Y
   clust <- matrix(1,siz,1) # market number
@@ -148,8 +148,8 @@ dta$airline <- factor(rep(1:6,m))
 
 ## create formula
 expl <- paste(cname[2:(kx+2)], collapse=" + ")
-#instr <- paste(cname[(kx+3):(kx+4)], collapse = "+")
-instr <- cname[(kx+4)]
+instr <- paste(cname[(kx+3):(kx+4)], collapse = "+")
+#instr <- cname[(kx+4)]
 if (fe==1){
   formul <- as.formula(paste(paste( paste("Y", expl, sep=" ~ 0 + "), ". - GY", sep=" | "),instr,sep=" + "))
 } else if (fe==2) {
@@ -158,9 +158,8 @@ if (fe==1){
 } else {
   formul <- as.formula(paste(paste( paste("Y", expl, sep=" ~ "), ". - GY", sep=" | "),instr,sep=" + "))
 }
-#out <- ivreg(Y ~ 0 + MarketPres + I(MarketPres^0.5) + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + airline + GY | 
-#  . - GY + zMarketPres + zDistHub, data = dta)
-out <- ivreg(formul, data = dta) # estimate model
+out <- ivreg(Y ~ 0 + MarketPres + I(MarketPres^0.5) + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + airline + GY | 
+  . - GY + zMarketPres + zDistHub, data = dta)
 cluster.robust.se(out, dta$school) # clustered SE
 
 pred <- predfit()/m # fraction of correctly predicted market structures

@@ -14,7 +14,7 @@ library(gtools)
 ################# Format data ###################
 #################################################
 
-fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
@@ -244,4 +244,7 @@ cluster.robust.se(out, dta$school) # clustered SE
 pred <- predfit()/m # fraction of correctly predicted market structures
 
 
+#Y ~ MarketPres + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + GY1 + GY2 + GY3 + GY4 + GY5 + GY6 + GX11 + GX12 + GX12 + GX22 + GX13 + GX23 + GX14 + GX24 + GX15 + GX25 + GX16 + GX26
+
+#indiv <- ivreg(Y ~ MarketPres + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + GY1 + GY2 + GY3 + GY4 + GY5 | . - GY1 - GY2 - GY3 - GY4 - GY5  + GX11 + GX21 + GX12 + GX22 + GX13 + GX23 + GX14 + GX24 + GX15 + GX25, data=dta[dta$airline==6,])
 

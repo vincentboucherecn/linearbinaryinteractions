@@ -15,6 +15,7 @@ library(gtools)
 
 
 fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+binary <- 1 # flag if =1, Market Presence is discretized
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
@@ -34,7 +35,12 @@ for (i in 1:m){ # for each market
   Yt <- matrix(0,nt,1) # initialize Y
   Xt <- matrix(0,nt,kx) # initialize X
   Yt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="airlineAA"):which(colnames(prior)=="airlineWN"))]) # y for market i
-  Xt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))]) # market presence for market i
+  if (binary==1){
+    Xt[,1] <- as.numeric(as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))])>=0.31) # market presence for market i
+  } else {
+    Xt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))]) # market presence for market i
+  }
+  
   Xt[,2] <- as.numeric(prior[i,c(which(colnames(prior)=="mindistancefromhubAA"):which(colnames(prior)=="mindistancefromhubWN"))]) # distance from hub for market i
   # market variables for market i
   Xt[,3] <- prior[i,"wrightamendmDAL"]
@@ -108,7 +114,7 @@ bdf <- function(){
   return(as.data.frame(cbind(bY,bX,bZ,clust)))
 }
 
-predfit <- function(){
+predfit <- function(probfit){
 ## computes number of correctly predicted markets
   obj <- 0 # initialize
   for (i in 1:m){
@@ -120,7 +126,7 @@ predfit <- function(){
     }
     nt <- n[i] # size of market i=6
     p2 <- p1 + nt -1 # position of the last firm in market i
-    Pi <- pmin(pmax(out$fitted.values[p1:p2],0),1) # predicted probability for y=1
+    Pi <- pmin(pmax(probfit[p1:p2],0),1) # predicted probability for y=1
     fit <- rep(0,l2k) # initialize probas
     for (j in 1:l2k){ # for each possible market structure
       yt <- c(v2k[j,]) # get the market structure
@@ -133,6 +139,39 @@ predfit <- function(){
   return(obj)
 }
 
+
+predictprob <- function(para){
+  # computes the variance-covariance matrix for the NLS
+  siz <- sum(n) # total number of individuals
+  grad <- matrix(0,siz,1) # initialize
+  if (fe==0){
+    mpara <- matrix(para[1:(length(para)-1)],(length(para)-1),1) # parameter values as matrix
+  } else {
+    mpara <- matrix(c(para[1:(kx)],para[(kx+2):length(para)]),(length(para)-1),1) # parameter values as matrix
+  }
+  
+  for (i in 1:m){ # for each group i
+    nt <- n[i] # size of group i
+    #position of the first individual in group i
+    if (i==1){
+      p1 <-1
+    } else{
+      p1 <- sum(n[1:(i-1)])+1
+    }
+    p2 <- p1+n[i]-1 # position of the last individual in group i
+    if (fe==0){
+      Minv <- solve(diag(nt)-para[length(para)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+      bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]]) # computes the probability of y=1
+    } else {
+      Minv <- solve(diag(nt)-para[(kx+1)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+      bZ <- cbind(X[[i]],diag(nt))
+      bZ <- Minv%*%bZ # computes the probability of y=1
+    }
+    
+    grad[p1:p2,1] <- bZ%*%mpara # computes predicted proba
+  }
+  return(c(grad))
+}
 
 
 #################################################
@@ -158,13 +197,16 @@ if (fe==1){
 } else {
   formul <- as.formula(paste(paste( paste("Y", expl, sep=" ~ "), ". - GY", sep=" | "),instr,sep=" + "))
 }
-out <- ivreg(Y ~ 0 + MarketPres + I(MarketPres^0.5) + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + airline + GY | 
-  . - GY + zMarketPres + zDistHub, data = dta)
+
+out <- ivreg(formul, data = dta) # 2SLS
 cluster.robust.se(out, dta$school) # clustered SE
 
-pred <- predfit()/m # fraction of correctly predicted market structures
-check <- as.numeric((out$fitted.values>=0)&(out$fitted.values<=1))
-check0 <- out$fitted.values<0
-check1 <- out$fitted.values>1
-dv1 <- mean(out$fitted.values[check1]-1)
-dv0 <- mean(-out$fitted.values[check0])
+if (fe !=1 ){
+  probfit <- predictprob(out$coefficients)
+  
+  pred <- predfit(probfit)/m # fraction of correctly predicted market structures
+  
+  print(mean(probfit>=0 & probfit<=1))
+}
+
+

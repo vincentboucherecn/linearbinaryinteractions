@@ -6,15 +6,17 @@
 library(foreign)
 library(AER)
 library(Matrix)
+library(clubSandwich)
 library(ivpack)
 library(gtools)
+library(mvtnorm)
 
 
 #################################################
 ################# Format data ###################
 #################################################
 
-fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
@@ -180,13 +182,13 @@ bdf <- function(){
     bX[p1:p2,] <- Jt%*%cbind(Xt,GYt1,GYt2,GYt3,GYt4,GYt5,GYt6) # X, Gy1,...Gy6
     bZ[p1:p2,] <- Jt%*%cbind(GXt1,GXt2,GXt3,GXt4,GXt5,GXt6) # GX1,...,GX6
     bY[p1:p2,1] <- Jt%*%Yt # Y
-    clust[p1:p2,1] <- school # school number
+    clust[p1:p2,1] <- school # market number
   }
   return(as.data.frame(cbind(bY,bX,bZ,clust)))
 }
 
 
-predfit <- function(){
+predfit <- function(probfit){
   ## computes number of correctly predicted markets
   obj <- 0 # initialize
   for (i in 1:m){
@@ -198,7 +200,7 @@ predfit <- function(){
     }
     nt <- n[i] # size of market i=6
     p2 <- p1 + nt -1 # position of the last firm in market i
-    Pi <- pmin(pmax(out$fitted.values[p1:p2],0),1) # predicted probability for y=1
+    Pi <- pmin(pmax(probfit[p1:p2],0),1) # predicted probability for y=1
     fit <- rep(0,l2k) # initialize probas
     for (j in 1:l2k){ # for each possible market structure
       yt <- c(v2k[j,]) # get the market structure
@@ -210,6 +212,78 @@ predfit <- function(){
   }
   return(obj)
 }
+
+predictprob <- function(para){
+  # computes the variance-covariance matrix for the NLS
+  siz <- sum(n) # total number of individuals
+  grad <- matrix(0,siz,1) # initialize
+  if (fe==0){
+    mpara <- matrix(para[1:(length(para)-6)],(length(para)-6),1) # parameter values as matrix
+  } else {
+    mpara <- matrix(c(para[1:(kx)],para[(kx+7):length(para)]),(length(para)-6),1) # parameter values as matrix
+  }
+  
+  for (i in 1:m){ # for each group i
+    nt <- n[i] # size of group i
+    #position of the first individual in group i
+    if (i==1){
+      p1 <-1
+    } else{
+      p1 <- sum(n[1:(i-1)])+1
+    }
+    p2 <- p1+n[i]-1 # position of the last individual in group i
+    if (fe==0){
+      Gt1 <- matrix(0,6,6) # interaction with firm 1
+      Gt1[,1] <- 1
+      diag(Gt1) <- 0
+      Gt2 <- matrix(0,6,6)  # interaction with firm 2
+      Gt2[,2] <- 1
+      diag(Gt2) <- 0
+      Gt3 <- matrix(0,6,6)  # interaction with firm 3
+      Gt3[,3] <- 1
+      diag(Gt3) <- 0
+      Gt4 <- matrix(0,6,6)  # interaction with firm 4
+      Gt4[,4] <- 1
+      diag(Gt4) <- 0
+      Gt5 <- matrix(0,6,6) # interaction with firm 5
+      Gt5[,5] <- 1
+      diag(Gt5) <- 0
+      Gt6 <- matrix(0,6,6) # interaction with firm 6
+      Gt6[,6] <- 1
+      diag(Gt6) <- 0
+      betat <- Gt1*para[(kx+1)]+Gt2*para[(kx+2)]+Gt3*para[(kx+3)]+Gt4*para[(kx+4)]+Gt5*para[(kx+5)]+Gt6*para[(kx+6)]
+      Minv <- solve(diag(nt)-betat) # computes the inverse (I-betaG)^(-1)
+      bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]]) # computes the probability of y=1
+    } else {
+      Gt1 <- matrix(0,6,6) # interaction with firm 1
+      Gt1[,1] <- 1
+      diag(Gt1) <- 0
+      Gt2 <- matrix(0,6,6)  # interaction with firm 2
+      Gt2[,2] <- 1
+      diag(Gt2) <- 0
+      Gt3 <- matrix(0,6,6)  # interaction with firm 3
+      Gt3[,3] <- 1
+      diag(Gt3) <- 0
+      Gt4 <- matrix(0,6,6)  # interaction with firm 4
+      Gt4[,4] <- 1
+      diag(Gt4) <- 0
+      Gt5 <- matrix(0,6,6) # interaction with firm 5
+      Gt5[,5] <- 1
+      diag(Gt5) <- 0
+      Gt6 <- matrix(0,6,6) # interaction with firm 6
+      Gt6[,6] <- 1
+      diag(Gt6) <- 0
+      betat <- Gt1*para[(kx+1)]+Gt2*para[(kx+2)]+Gt3*para[(kx+3)]+Gt4*para[(kx+4)]+Gt5*para[(kx+5)]+Gt6*para[(kx+6)]
+      Minv <- solve(diag(nt)-betat) # computes the inverse (I-betaG)^(-1)
+      bZ <- cbind(X[[i]],diag(nt))
+      bZ <- Minv%*%bZ # computes the probability of y=1
+    }
+    
+    grad[p1:p2,1] <- bZ%*%mpara # computes predicted proba
+  }
+  return(c(grad))
+}
+
 
 #################################################
 ################# Execute Code###################
@@ -241,10 +315,29 @@ if (fe==1){
 out <- ivreg(formul, data = dta) # 2SLS
 cluster.robust.se(out, dta$school) # clustered SE
 
-pred <- predfit()/m # fraction of correctly predicted market structures
+if (fe !=1 ){
+  probfit <- predictprob(out$coefficients)
+  
+  pred <- predfit(probfit)/m # fraction of correctly predicted market structures
+  print(pred)
+  print(mean(probfit>=0 & probfit<=1))
+}
 
 
-#Y ~ MarketPres + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + GY1 + GY2 + GY3 + GY4 + GY5 + GY6 + GX11 + GX12 + GX12 + GX22 + GX13 + GX23 + GX14 + GX24 + GX15 + GX25 + GX16 + GX26
+Evcov <- vcovCL(out,cluster=dta$school)
+if (fe==0){
+  Evcov <- Evcov[(nrow(Evcov)-5):nrow(Evcov),(nrow(Evcov)-5):nrow(Evcov)]
+  Ebeta <- out$coefficients[(length(out$coefficients)-5):length(out$coefficients)]
+} else if (fe==2){
+  Evcov <- Evcov[(kx+1):(kx+6),(kx+1):(kx+6)]
+  Ebeta <- out$coefficients[(kx+1):(kx+6)]
+}
 
-#indiv <- ivreg(Y ~ MarketPres + DistHub + Wright + Dallas + Msize + Mdist + mindist + centerdist + percapinc + changeinc + GY1 + GY2 + GY3 + GY4 + GY5 | . - GY1 - GY2 - GY3 - GY4 - GY5  + GX11 + GX21 + GX12 + GX22 + GX13 + GX23 + GX14 + GX24 + GX15 + GX25, data=dta[dta$airline==6,])
 
+nsim <- 10000
+val <- rep(NA,nsim)
+for (sim in 1:nsim){
+  tbeta <- rmvnorm(n=1,Ebeta,Evcov)
+  val[sim] <- sum(abs(tbeta))
+}
+print(mean(val>=1))

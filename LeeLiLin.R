@@ -12,7 +12,7 @@ library(ivpack)
 #################################
 
 fe <- 0 # fixed effect flag. fe=1 for school-grade fixed effects.
-dummy <- 0 # school dummies flag. dummy=1 for school dummies, automatically disregards fe=1 if present.
+dummy <- 1 # school dummies flag. dummy=1 for school dummies, automatically disregards fe=1 if present.
 prior <- read.dta("/home/vincent/Desktop/tmpah/Desktop/ecnaddhealth/LPM/cleandta.dta") # dataset constructed using the code from Lee Li Lin (2014)
 prior$sschlcde <- prior$scid*100+prior$grade # generates a unique identifier for each group (school-grade)
 listschools <- unique(prior$scid) # list of schools
@@ -165,7 +165,7 @@ nls <- function(){
 }
 
 nlsSE <- function(para){
-# computes the standard errors for the NLS
+# computes the variance-covariance matrix for the NLS
   siz <- sum(n) # total number of individuals
   grad <- matrix(0,siz,length(para)) # initialize
   res <- matrix(0,siz,1) # initialize residuals
@@ -194,6 +194,42 @@ nlsSE <- function(para){
   }
   se <- DpD%*%grad2%*%grad%*%DpD
   return(se)
+}
+
+
+predictprob <- function(para){
+  # computes the variance-covariance matrix for the NLS
+  siz <- sum(n) # total number of individuals
+  grad <- matrix(0,siz,1) # initialize
+  if (dummy==0){
+    mpara <- matrix(para[1:(length(para)-1)],(length(para)-1),1) # parameter values as matrix
+  } else {
+    mpara <- matrix(c(para[1:(2*kx)],para[(2*kx+2):length(para)]),(length(para)-1),1) # parameter values as matrix
+  }
+  
+  for (i in 1:m){ # for each group i
+    nt <- n[i] # size of group i
+    #position of the first individual in group i
+    if (i==1){
+      p1 <-1
+    } else{
+      p1 <- sum(n[1:(i-1)])+1
+    }
+    p2 <- p1+n[i]-1 # position of the last individual in group i
+    if (dummy==0){
+      Minv <- solve(diag(nt)-para[length(para)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+      bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]],G[[i]]%*%X[[i]]) # computes the probability of y=1
+    } else {
+      Minv <- solve(diag(nt)-para[(2*kx+1)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+      whichdummy <- which(listschools==whichschool[which(whichschool[,2]==listsch[i]),1]) # get the school number of the school associated with group "school"
+      bZ <- cbind(X[[i]],G[[i]]%*%X[[i]],matrix(0,nt,nschools))
+      bZ[,(2*kx+whichdummy)] <- 1
+      bZ <- Minv%*%bZ # computes the probability of y=1
+    }
+    
+    grad[p1:p2,1] <- bZ%*%mpara # computes predicted proba
+  }
+  return(c(grad))
 }
 
 #################################
@@ -242,7 +278,15 @@ if (dummy==1){ # 2SLS estimation if dummy=1
   }
 }
 
-fitval <- out$fitted.values
-okfit <- as.numeric((fitval>0)&(fitval<1))
+fitval <- predictprob(out$coefficients)
+okfit <- as.numeric((fitval>=0)&(fitval<=1))
+
+if (fe==0 & dummy==0){
+  nlsestimate <- nls()
+  nlsVC <- nlsSE(nlsestimate)
+  
+  fitval <- predictprob(nlsestimate)
+  okfit2 <- as.numeric((fitval>=0)&(fitval<=1))  
+}
 
 

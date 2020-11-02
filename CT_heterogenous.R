@@ -16,7 +16,8 @@ library(mvtnorm)
 ################# Format data ###################
 #################################################
 
-fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+binary <- 1 # flag if =1, Market Presence is discretized
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
@@ -36,7 +37,11 @@ for (i in 1:m){ # for each market
   Yt <- matrix(0,nt,1) # initialize Y
   Xt <- matrix(0,nt,kx) # initialize X
   Yt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="airlineAA"):which(colnames(prior)=="airlineWN"))]) # y for market i
-  Xt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))]) # market presence for market i
+  if (binary==1){
+    Xt[,1] <- as.numeric(as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))])>=0.31) # market presence for market i
+  } else {
+    Xt[,1] <- as.numeric(prior[i,c(which(colnames(prior)=="marketpresenceAA"):which(colnames(prior)=="marketpresenceWN"))]) # market presence for market i
+  }
   Xt[,2] <- as.numeric(prior[i,c(which(colnames(prior)=="mindistancefromhubAA"):which(colnames(prior)=="mindistancefromhubWN"))]) # distance from hub for market i
   # market variables for market i
   Xt[,3] <- prior[i,"wrightamendmDAL"]

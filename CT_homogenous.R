@@ -14,7 +14,7 @@ library(gtools)
 #################################################
 
 
-fe <- 0 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
+fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
 binary <- 1 # flag if =1, Market Presence is discretized
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT

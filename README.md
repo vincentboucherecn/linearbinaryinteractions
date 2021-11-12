@@ -10,4 +10,4 @@
 
 + *CT_homogenous.R* -- R script that computes the 2SLS estimations for the application in Ciliberto and Tamer (2009) using the homogenous specification (see Table 3 of the paper)
 
-+ *CT_heterogenous.R* -- R script that computes the 2SLS estimations for the application in Ciliberto and Tamer (2009) using the heterogenous specification (see Table 4 of the paper)
++ *CT_homogenous_airportdummies.R* -- R script that computes the 2SLS estimations for the application in Ciliberto and Tamer (2009) using the homogenous specification with airport FE (see Table 3 of the paper)

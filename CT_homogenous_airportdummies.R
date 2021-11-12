@@ -7,20 +7,24 @@ library(foreign)
 library(estimatr)
 library(Matrix)
 library(gtools)
-rm(list=ls())
+
 #################################################
 ################ Format data ####################
 #################################################
 
-
-fe <- 2 # flag for Airline specific fixed effect (=1 is within deviation, =2 is using dummies)
-binary <- 0 # flag if =1, Market Presence is discretized
+rm(list=ls())
+fe <-  2 # use =2 DO NOT CHANGE
+binary <- 1 # flag if =1, Market Presence is discretized
 
 prior <- read.dta("/home/vincent/Dropbox/LPM/applications/CT/Ecta5368-5/CilibertoTamerEconometrica.dta") # get data from CT
 prior$A1 <- sapply(prior$market,function(x) substring(x,1,3)) # origine airport
 prior$A2 <- sapply(prior$market,function(x) substring(x,4,6)) # destination airport
+listair <- union(prior$A1,prior$A2)
+prior$A1n <- sapply(1:nrow(prior),function(i) which(listair==prior$A1[i]))
+prior$A2n <- sapply(1:nrow(prior),function(i) which(listair==prior$A2[i]))
+
 m <- nrow(prior) # number of markets
-kx <- 10 # number of explanatory variables
+kx <- 12 # number of explanatory variables
 v2k <- unique(permutations(n=6,r=6,v=c(1,0,0,0,0,0),set=F,repeats.allowed = T)) # list all possible matket combinations
 l2k <- nrow(v2k) # number of possible market combinations
 X <- vector("list", m) # each element will be a matrix
@@ -50,7 +54,8 @@ for (i in 1:m){ # for each market
   Xt[,8] <- prior[i,"fromcenterdistance"]
   Xt[,9] <- prior[i,"percapitaincmarket"]
   Xt[,10] <- prior[i,"changeincmarket"]
-
+  Xt[,11] <- prior[i,"A1n"]
+  Xt[,12] <- prior[i,"A2n"]
   diag(Gt) <- 0 # zero on diagonal of G
   X[[i]] <- Xt # store X
   Y[[i]] <- Yt # store Y
@@ -101,7 +106,7 @@ bdf <- function(){
     GXt <- Gt%*%Xt # computes GX
     if (fe==1){ # if fe=1, substract averages
       Yt <- Yt - mY
-      Xt <- Xt - mX
+      Xt[,1:(kx-2)] <- Xt[,1:(kx-2)] - mX[,1:(kx-2)]
       GYt <- GYt - mGY
       GXt <- GXt - mGX
     }
@@ -113,11 +118,12 @@ bdf <- function(){
   return(as.data.frame(cbind(bY,bX,bZ,clust)))
 }
 
+
 predfit <- function(probfit){
-## computes number of correctly predicted markets
+  ## computes number of correctly predicted markets
   obj <- 0 # initialize
   for (i in 1:m){
-## position of the first firm in market i
+    ## position of the first firm in market i
     if (i==1){
       p1 <-1
     } else{
@@ -146,6 +152,7 @@ predictprob <- function(para){
   mpara <- matrix(para[1:(length(para)-1)],(length(para)-1),1) # parameter values as matrix, parameters on exogenous variables, including constant at 1st position
   
   for (i in 1:m){ # for each group i
+    
     nt <- n[i] # size of group i
     #position of the first individual in group i
     if (i==1){
@@ -155,28 +162,36 @@ predictprob <- function(para){
     }
     p2 <- p1+n[i]-1 # position of the last individual in group i
     Minv <- solve(diag(nt)-para[length(para)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
-    if (fe==0){
-      if (!costonly){
-        bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]]) # computes the probability of y=1
-      }
-      if (costonly){
-        bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]][,-1]) # computes the probability of y=1
-      }
-    }
-    if (fe==2){
-      if (!costonly){
-        bZ <- cbind(X[[i]],diag(nt))
-      }
-      if (costonly){
-        bZ <- cbind(X[[i]][,-1],diag(nt))
-      }
+    if (!costonly){
+      Xt <- X[[i]][,c(-4)]
+      ald <- diag(nt)
+      ald <- ald[,1:(nt-1)]
+      aid <- matrix(0,nt,101)
+      aid[,Xt[1,10]] <- 1
+      aid[,Xt[1,11]] <- 1
+      aid <- aid[,-10]
+      Xt <- Xt[,1:9]
+      bZ <- cbind(Xt,ald,aid)
       bZ <- Minv%*%bZ # computes the probability of y=1
     }
-    
+    if (costonly){
+      Xt <- X[[i]][,c(-1,-4)]
+      ald <- diag(nt)
+      ald <- ald[,1:(nt-1)]
+      aid <- matrix(0,nt,101)
+      aid[,Xt[1,9]] <- 1
+      aid[,Xt[1,10]] <- 1
+      aid <- aid[,-10]
+      Xt <- Xt[,1:8]
+      bZ <- cbind(Xt,ald,aid)
+      bZ <- Minv%*%bZ # computes the probability of y=1
+    }
+  
     grad[p1:p2,1] <- bZ%*%mpara # computes predicted proba
   }
   return(c(grad))
 }
+
 
 
 #################################################
@@ -185,72 +200,63 @@ predictprob <- function(para){
 
 dta <- bdf() # construct database
 # name variables
-cname <- c("MarketPres","DistHub","Wright","Dallas","Msize","Mdist","mindist","centerdist","percapinc","changeinc")
+cname <- c("MarketPres","DistHub","Wright","Dallas","Msize","Mdist","mindist","centerdist","percapinc","changeinc","A1","A2")
 cname <- c("Y",cname,"GY",as.vector(sapply(cname,function(t) paste("z",t,sep=''))),"school")
 colnames(dta) <- cname
-dta$airline <- factor(rep(1:6,m))
+dta$airline <- rep(1:6,m)
+dta$air1 <- as.numeric(dta$airline==1)
+dta$air2 <- as.numeric(dta$airline==2)
+dta$air3 <- as.numeric(dta$airline==3)
+dta$air4 <- as.numeric(dta$airline==4)
+dta$air5 <- as.numeric(dta$airline==5)
 
-## create formula
-#instr <- cname[(kx+4)]
-if (fe==1){
-  out <- iv_robust(Y ~ 0 + MarketPres + DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + GY | 0 + MarketPres +
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + zMarketPres + zDistHub, data=dta,clusters = school,diagnostics = T)
-} else if (fe==2) {
-  out <- iv_robust(Y ~ 0 + MarketPres + DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + airline + GY | 0 + MarketPres +
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + airline + zMarketPres + zDistHub, data=dta,clusters = school,diagnostics = T)
-} else {
-  out <- iv_robust(Y ~ MarketPres + DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + GY | MarketPres +
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + zMarketPres + zDistHub, data=dta,clusters = school,diagnostics = T)
+dum <- as.data.frame(matrix(0,nrow(dta),101))
+colnames(dum) <- paste(rep("d",101),as.character(1:101),sep="")
+for (i in 1:101){
+  dum[,i] <- as.numeric(dta$A1==i | dta$A2==i)
 }
+dum <- dum[,-10] # only two markets
+dta <- cbind(dta,dum)
+dta$Dallas <- NULL
+expl <- c("0", colnames(dta)[c(which(colnames(dta)=="MarketPres"):which(colnames(dta)=="changeinc"))],colnames(dta)[c(which(colnames(dta)=="air1"):which(colnames(dta)=="air5"))],colnames(dum),"GY")
+instr <- c("0", colnames(dta)[c(which(colnames(dta)=="MarketPres"):which(colnames(dta)=="changeinc"))],colnames(dta)[c(which(colnames(dta)=="air1"):which(colnames(dta)=="air5"))],colnames(dum),"zMarketPres","zDistHub")
+expl <- paste(expl, collapse = " + ")
+instr <- paste(instr, collapse = " + ")
+formul <- as.formula(paste( paste("Y", expl, sep=" ~ "), instr, sep=" | "))
+
+out <- iv_robust(formul, data=dta,clusters = school,diagnostics = T)
 
 print(summary(out))
 
 costonly <- FALSE
 
-if (fe !=1 ){
-  probfit <- predictprob(out$coefficients)
+probfit <- predictprob(out$coefficients)
   
-  pred <- predfit(probfit)/m # fraction of correctly predicted market structures
-  print(pred)
-  print(mean(probfit>=0 & probfit<=1))
-}
+pred <- predfit(probfit)/m # fraction of correctly predicted market structures
+print(pred)
+print(mean(probfit>=0 & probfit<=1))
+  
 
 
-if (fe==1){
-  out <- iv_robust(Y ~ 0 + DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + GY | 0 + 
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + zDistHub, data=dta,clusters = school,diagnostics = T)
-} else if (fe==2) {
-  out <- iv_robust(Y ~ 0 + DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + airline + GY | 0 + 
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + airline + zDistHub, data=dta,clusters = school,diagnostics = T)
-} else {
-  out <- iv_robust(Y ~ DistHub + Wright + Dallas + Msize + Mdist + 
-                     mindist + centerdist + percapinc + changeinc + GY | 
-                     DistHub + Wright + Dallas + Msize 	+ Mdist + mindist + centerdist + 
-                     percapinc + changeinc + zDistHub, data=dta,clusters = school,diagnostics = T)
-}
 
-print(summary(out))
+## no airport presence
 
 costonly <- TRUE
 
-if (fe !=1 ){
-  probfit <- predictprob(out$coefficients)
+expl <- c("0", colnames(dta)[c(which(colnames(dta)=="DistHub"):which(colnames(dta)=="changeinc"))],colnames(dta)[c(which(colnames(dta)=="air1"):which(colnames(dta)=="air5"))],colnames(dum),"GY")
+instr <- c("0", colnames(dta)[c(which(colnames(dta)=="DistHub"):which(colnames(dta)=="changeinc"))],colnames(dta)[c(which(colnames(dta)=="air1"):which(colnames(dta)=="air5"))],colnames(dum),"zDistHub")
+expl <- paste(expl, collapse = " + ")
+instr <- paste(instr, collapse = " + ")
+formul <- as.formula(paste( paste("Y", expl, sep=" ~ "), instr, sep=" | "))
+
+out <- iv_robust(formul, data=dta,clusters = school,diagnostics = T)
+print(summary(out))
+
+probfit <- predictprob(out$coefficients)
   
-  pred <- predfit(probfit)/m # fraction of correctly predicted market structures
-  print(pred)
-  print(mean(probfit>=0 & probfit<=1))
-}
-
-
+pred <- predfit(probfit)/m # fraction of correctly predicted market structures
+print(pred)
+print(mean(probfit>=0 & probfit<=1))
+  
 
 

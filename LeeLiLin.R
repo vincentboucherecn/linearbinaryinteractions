@@ -5,14 +5,14 @@
 library(foreign)
 library(AER)
 library(Matrix)
-library(ivpack)
+library(estimatr)
 
 #################################
 ######## Prepare dataset ########
 #################################
-
-fe <- 0 # fixed effect flag. fe=1 for school-grade fixed effects.
-dummy <- 1 # school dummies flag. dummy=1 for school dummies, automatically disregards fe=1 if present.
+rm(list=ls())
+fe <- 1 # fixed effect flag. fe=1 for school-grade fixed effects.
+dummy <- 0 # school dummies flag. dummy=1 for school dummies, automatically disregards fe=1 if present.
 prior <- read.dta("/home/vincent/Desktop/tmpah/Desktop/ecnaddhealth/LPM/cleandta.dta") # dataset constructed using the code from Lee Li Lin (2014)
 prior$sschlcde <- prior$scid*100+prior$grade # generates a unique identifier for each group (school-grade)
 listschools <- unique(prior$scid) # list of schools
@@ -201,11 +201,7 @@ predictprob <- function(para){
   # computes the variance-covariance matrix for the NLS
   siz <- sum(n) # total number of individuals
   grad <- matrix(0,siz,1) # initialize
-  if (dummy==0){
-    mpara <- matrix(para[1:(length(para)-1)],(length(para)-1),1) # parameter values as matrix
-  } else {
-    mpara <- matrix(c(para[1:(2*kx)],para[(2*kx+2):length(para)]),(length(para)-1),1) # parameter values as matrix
-  }
+  mpara <- matrix(para[1:(length(para)-1)],(length(para)-1),1) # parameter values as matrix
   
   for (i in 1:m){ # for each group i
     nt <- n[i] # size of group i
@@ -216,16 +212,20 @@ predictprob <- function(para){
       p1 <- sum(n[1:(i-1)])+1
     }
     p2 <- p1+n[i]-1 # position of the last individual in group i
-    if (dummy==0){
-      Minv <- solve(diag(nt)-para[length(para)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+    Minv <- solve(diag(nt)-para[length(para)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
+    if (fe==0 & dummy==0){
       bZ <- Minv%*%cbind(matrix(1,nt,1),X[[i]],G[[i]]%*%X[[i]]) # computes the probability of y=1
-    } else {
-      Minv <- solve(diag(nt)-para[(2*kx+1)]*G[[i]]) # computes the inverse (I-betaG)^(-1)
-      whichdummy <- which(listschools==whichschool[which(whichschool[,2]==listsch[i]),1]) # get the school number of the school associated with group "school"
-      bZ <- cbind(X[[i]],G[[i]]%*%X[[i]],matrix(0,nt,nschools))
-      bZ[,(2*kx+whichdummy)] <- 1
-      bZ <- Minv%*%bZ # computes the probability of y=1
     }
+    if (dummy==1){
+      whichdummy <- which(listschools==whichschool[which(whichschool[,2]==listsch[i]),1]) # get the school number of the school associated with group "school"
+      schdummies <- matrix(0,nt,nschools)
+      schdummies[,whichdummy] <- 1
+      bZ <- cbind(X[[i]],G[[i]]%*%X[[i]],schdummies)
+    }
+    if (fe==1){
+      bZ <- Minv%*%cbind(X[[i]],G[[i]]%*%X[[i]]) # computes the probability of y=1
+    }
+    bZ <- Minv%*%bZ # computes the probability of y=1
     
     grad[p1:p2,1] <- bZ%*%mpara # computes predicted proba
   }
@@ -248,16 +248,25 @@ if (dummy==1){ # 2SLS estimation if dummy=1
              "GY", "ZAge","ZAge2","ZYearsSchool","ZMale","ZBlack","ZAsian","ZHisp","ZOtherR", "ZBothPar", "ZSport", "ZMlhs", "ZMmhs", "ZMeduc_mis", "ZMprof","ZMother", "ZMwelfare", "ZMjobmiss", "schlab")
   nmvar <- c(nmvar, paste("D", 1:nschools, sep="") )
   colnames(dta) <- nmvar
-  # create a formula
-  listvar1 <- colnames(dta)[3:(2*kx+3)] # X, GX, GY
-  listvar2 <- colnames(dta)[(2*kx+4):(3*kx+3)] # instruments
-  listvar3 <- colnames(dta)[(3*kx+5):length(colnames(dta))] # dummies
-  formula <- paste(colnames(dta)[1], "~ 0 + ", paste(listvar1, collapse = " + "), "+", paste(listvar3, collapse = " + "), "| . -GY + ", paste(listvar2, collapse = " + "), sep = " ")
-  formula <- as.formula(formula)
   
   # Estimation
-  out <- ivreg(formula, data = dta)
-  cluster.robust.se(out, dta$schlab)
+  out <- iv_robust(Y ~ 0 + Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                     GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + D1 + D2 + D3 +
+                     D4 + D5 + D6 + D7 + D8 + D9 + D10 + D11 + D12 + D13 + D14 + D15 + D16 + D17 + D18 + D19 + D20 + D21 + D22 + D23 + D24 + D25 + D26 + D27 + D28 + D29 + D30 + D31 + D32 +
+                     D33 + D34 + D35 + D36 + D37 + D38 + D39 + D40 + D41 + D42 + D43 + D44 + D45 + D46 + D47 + D48 + D49 + D50 + D51 + D52 + D53 + D54 + D55 + D56 + D57 + D58 + D59 + D60 +
+                     D61 + D62 + D63 + D64 + D65 + D66 + D67 + D68 + D69 + D70 + D71 + D72 + D73 + D74 + D75 + D76 + D77 + D78 + D79 + D80 + D81 + D82 + D83 + D84 + D85 + D86 + D87 + D88 +
+                     D89 + D90 + D91 + D92 + D93 + D94 + D95 + D96 + D97 + D98 + D99 + D100 + D101 + D102 + D103 + D104 + D105 + D106 + D107 + D108 + D109 + D110 + D111 + D112 + D113 +
+                     D114 + D115 + D116 + D117 + D118 + D119 + D120 + D121 + D122 + D123 + D124 + D125 + D126 + D127 + GY |
+                     0 + Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                     GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + D1 + D2 + D3 +
+                     D4 + D5 + D6 + D7 + D8 + D9 + D10 + D11 + D12 + D13 + D14 + D15 + D16 + D17 + D18 + D19 + D20 + D21 + D22 + D23 + D24 + D25 + D26 + D27 + D28 + D29 + D30 + D31 + D32 +
+                     D33 + D34 + D35 + D36 + D37 + D38 + D39 + D40 + D41 + D42 + D43 + D44 + D45 + D46 + D47 + D48 + D49 + D50 + D51 + D52 + D53 + D54 + D55 + D56 + D57 + D58 + D59 + D60 +
+                     D61 + D62 + D63 + D64 + D65 + D66 + D67 + D68 + D69 + D70 + D71 + D72 + D73 + D74 + D75 + D76 + D77 + D78 + D79 + D80 + D81 + D82 + D83 + D84 + D85 + D86 + D87 + D88 +
+                     D89 + D90 + D91 + D92 + D93 + D94 + D95 + D96 + D97 + D98 + D99 + D100 + D101 + D102 + D103 + D104 + D105 + D106 + D107 + D108 + D109 + D110 + D111 + D112 + D113 +
+                     D114 + D115 + D116 + D117 + D118 + D119 + D120 + D121 + D122 + D123 + D124 + D125 + D126 + D127 +
+                     ZAge + ZAge2 + ZYearsSchool + ZMale + ZBlack + ZAsian + ZHisp + ZOtherR + ZBothPar + ZSport + ZMlhs + ZMmhs + ZMeduc_mis + ZMprof + ZMother + ZMwelfare + ZMjobmiss,
+                   data=dta,clusters = schlab,diagnostics = T)
+  
 
 } else { # 2SLS estimation if dummy=0
   # name the variables
@@ -266,20 +275,27 @@ if (dummy==1){ # 2SLS estimation if dummy=1
                      "GY", "ZAge","ZAge2","ZYearsSchool","ZMale","ZBlack","ZAsian","ZHisp","ZOtherR", "ZBothPar", "ZSport", "ZMlhs", "ZMmhs", "ZMeduc_mis", "ZMprof","ZMother", "ZMwelfare", "ZMjobmiss", "schlab")
   # estimation
   if (fe==0){
-    out <- ivreg(Y ~ Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
-                 GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + GY | . - GY +
-                 ZAge + ZAge2 + ZYearsSchool + ZMale + ZBlack + ZAsian + ZHisp + ZOtherR + ZBothPar + ZSport + ZMlhs + ZMmhs + ZMeduc_mis + ZMprof + ZMother + ZMwelfare + ZMjobmiss, data = dta)
-    cluster.robust.se(out, dta$schlab)
+    out <- iv_robust(Y ~ Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                 GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + GY |
+                   Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                   GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss +
+                 ZAge + ZAge2 + ZYearsSchool + ZMale + ZBlack + ZAsian + ZHisp + ZOtherR + ZBothPar + ZSport + ZMlhs + ZMmhs + ZMeduc_mis + ZMprof + ZMother + ZMwelfare + ZMjobmiss,
+                 data=dta,clusters = schlab,diagnostics = T)
+    
   } else {
-    out <- ivreg(Y ~ 0 + Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
-                 GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + GY | . - GY +
-                 ZAge + ZAge2 + ZYearsSchool + ZMale + ZBlack + ZAsian + ZHisp + ZOtherR + ZBothPar + ZSport + ZMlhs + ZMmhs + ZMeduc_mis + ZMprof + ZMother + ZMwelfare + ZMjobmiss, data = dta)
-    cluster.robust.se(out, dta$schlab)
+    out <- iv_robust(Y ~ 0 + Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                 GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss + GY |
+                   0 + Age + Age2 + YearsSchool + Male + Black + Asian + Hisp + OtherR + BothPar + Sport + Mlhs + Mmhs + Meduc_mis + Mprof + Mother + Mwelfare + Mjobmiss + GAge + GAge2 +
+                   GYearsSchool + GMale + GBlack + GAsian + GHisp + GOtherR + GBothPar + GSport + GMlhs + GMmhs + GMeduc_mis + GMprof + GMother + GMwelfare + GMjobmiss +
+                 ZAge + ZAge2 + ZYearsSchool + ZMale + ZBlack + ZAsian + ZHisp + ZOtherR + ZBothPar + ZSport + ZMlhs + ZMmhs + ZMeduc_mis + ZMprof + ZMother + ZMwelfare + ZMjobmiss,
+                 data=dta,clusters = schlab,diagnostics = T)
   }
 }
+print(summary(out))
 
 fitval <- predictprob(out$coefficients)
 okfit <- as.numeric((fitval>=0)&(fitval<=1))
+print(mean(okfit))
 
 if (fe==0 & dummy==0){
   nlsestimate <- nls()

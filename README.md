@@ -8,6 +8,3 @@
 
 + *LeeLiLin.R* -- R script that computes the NLS and 2SLS estimations (see Table 2 of the paper) using the same dataset as in Lee, Li and Lin (2014).
 
-+ *CT_homogenous.R* -- R script that computes the 2SLS estimations for the application in Ciliberto and Tamer (2009) using the homogenous specification (see Table 3 of the paper)
-
-+ *CT_homogenous_airportdummies.R* -- R script that computes the 2SLS estimations for the application in Ciliberto and Tamer (2009) using the homogenous specification with airport FE (see Table 3 of the paper)

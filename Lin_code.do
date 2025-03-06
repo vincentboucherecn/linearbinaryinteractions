@@ -1,4 +1,5 @@
 /*
+CODE provided by the authors of L.-f. Lee, J. Li, and X. Lin. "Binary choice models with social network under heterogeneous rational expectations." Review of Economics and Statistics, 96(3):402–417, 2014.
 do C:\Xu_Lin\Paper\variables.do
 
 
